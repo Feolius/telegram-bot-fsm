@@ -22,4 +22,5 @@ type StateConfig[T any] struct {
 	TransitionFn        func(ctx context.Context, update *tgbotapi.Update, data *T) Transition
 	MessageFn           func(ctx context.Context, data T) MessageConfig
 	RemoveKeyboardAfter bool
+	CleanupData         bool
 }

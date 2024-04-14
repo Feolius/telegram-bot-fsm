@@ -91,16 +91,19 @@ func (b *BotFsm[T]) HandleUpdate(ctx context.Context, update *tgbotapi.Update) e
 		newName = name
 	}
 
-	payload := transition.MessageConfig
+	messageConfig := transition.MessageConfig
 	newStateConfig, ok := b.configs[newName]
 	if !ok {
 		panic(fmt.Sprintf("%s state configuration is not found", newName))
 	}
-	if payload.Text == "" {
-		payload = newStateConfig.MessageFn(ctx, data)
+	if newStateConfig.CleanupData {
+		data = b.getZeroData()
+	}
+	if messageConfig.Text == "" {
+		messageConfig = newStateConfig.MessageFn(ctx, data)
 	}
 
-	if stateConfig.RemoveKeyboardAfter || payload.RemoveKeyboard {
+	if stateConfig.RemoveKeyboardAfter || messageConfig.RemoveKeyboard {
 		b.removeKeyboard(chatId)
 	}
 
@@ -109,20 +112,56 @@ func (b *BotFsm[T]) HandleUpdate(ctx context.Context, update *tgbotapi.Update) e
 		return fmt.Errorf("error in attempt to save a new state: %w", err)
 	}
 
-	for _, msgConfig := range b.getStateMessageConfigs(chatId, payload) {
+	for _, msgConfig := range b.getStateMessageConfigs(chatId, messageConfig) {
 		_, err = b.bot.Send(msgConfig)
 		if err != nil {
 			return err
 		}
 	}
 	return nil
+}
 
+func (b *BotFsm[T]) GoTo(ctx context.Context, chatId int64, transition Transition) error {
+	name, data, err := b.loadStateFn(ctx, chatId)
+	if err != nil {
+		return err
+	}
+
+	newName := transition.Target
+	if newName == "" {
+		newName = name
+	}
+
+	newStateConfig, ok := b.configs[newName]
+	if !ok {
+		panic(fmt.Sprintf("%s state configuration is not found", newName))
+	}
+	if newStateConfig.CleanupData {
+		data = b.getZeroData()
+	}
+	messageConfig := transition.MessageConfig
+	if messageConfig.Text == "" {
+		messageConfig = newStateConfig.MessageFn(ctx, data)
+	}
+
+	err = b.saveStateFn(ctx, chatId, newName, data)
+	if err != nil {
+		return fmt.Errorf("error in attempt to save a new state: %w", err)
+	}
+
+	for _, msgConfig := range b.getStateMessageConfigs(chatId, messageConfig) {
+		_, err = b.bot.Send(msgConfig)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (b *BotFsm[T]) resumeState(ctx context.Context, update *tgbotapi.Update) (string, T, error) {
 	chatId := getChatId(update)
 
-	var emptyData T
+	emptyData := b.getZeroData()
 	if chatId == 0 {
 		return "", emptyData, &NoChatIdError{update}
 	}
@@ -144,6 +183,11 @@ func (b *BotFsm[T]) resumeState(ctx context.Context, update *tgbotapi.Update) (s
 
 }
 
+func (b *BotFsm[T]) getZeroData() T {
+	var data T
+	return data
+}
+
 func getChatId(update *tgbotapi.Update) int64 {
 	var chatId int64
 	if update.Message != nil && update.Message.Chat != nil {
@@ -157,8 +201,7 @@ func getChatId(update *tgbotapi.Update) int64 {
 }
 
 func (b *BotFsm[T]) removeKeyboard(chatId int64) {
-	// @TODO add config for this text
-	msg := tgbotapi.NewMessage(chatId, "Thinking...⏳")
+	msg := tgbotapi.NewMessage(chatId, b.removeKeyboardTempMsg)
 	msg.ReplyMarkup = tgbotapi.NewRemoveKeyboard(false)
 	msgSent, err := b.bot.Send(msg)
 	if err != nil {
