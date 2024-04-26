@@ -41,16 +41,11 @@ func defaultPersistenceHandlers[T any]() (LoadStateFn[T], SaveStateFn[T]) {
 	}
 	return func(ctx context.Context, chatId int64) (name string, data T, err error) {
 			chatState, ok := store.get(chatId)
-			if !ok {
-				var emptyData T
-				name = UndefinedState
-				data = emptyData
-				return
+			if ok {
+				name = chatState.name
+				data = chatState.data
 			}
-			name = chatState.name
-			data = chatState.data
 			return
-
 		}, func(ctx context.Context, chatId int64, name string, data T) error {
 			chatState := &ChatState[T]{
 				chatId: chatId,

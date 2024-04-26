@@ -38,3 +38,6 @@ type StateConfig[T any] struct {
 	RemoveKeyboardAfter bool
 	CleanupData         bool
 }
+
+type LoadStateFn[T any] func(ctx context.Context, chatId int64) (name string, data T, err error)
+type SaveStateFn[T any] func(ctx context.Context, chatId int64, name string, data T) error

@@ -9,6 +9,7 @@ import (
 )
 
 const CommandHandlerState = "command-handler"
+const UndefinedState = "undefined"
 
 type NoChatIdError struct {
 	*tgbotapi.Update
@@ -18,8 +19,29 @@ func (e *NoChatIdError) Error() string {
 	return fmt.Sprintf("no chat id in update: %+v", e.Update)
 }
 
-type LoadStateFn[T any] func(ctx context.Context, chatId int64) (name string, data T, err error)
-type SaveStateFn[T any] func(ctx context.Context, chatId int64, name string, data T) error
+type LoadStateError struct {
+	Err error
+}
+
+func (e *LoadStateError) Error() string {
+	return fmt.Sprintf("loading state error: %s", e.Err)
+}
+
+func (e *LoadStateError) Unwrap() error {
+	return e.Err
+}
+
+type SaveStateError struct {
+	Err error
+}
+
+func (e *SaveStateError) Error() string {
+	return fmt.Sprintf("saving state error: %s", e.Err)
+}
+
+func (e *SaveStateError) Unwrap() error {
+	return e.Err
+}
 
 type botFsmOpts[T any] struct {
 	loadStateFn           LoadStateFn[T]
@@ -51,6 +73,9 @@ type BotFsm[T any] struct {
 func NewBotFsm[T any](bot *tgbotapi.BotAPI, configs map[string]StateConfig[T], optFns ...BotFsmOptsFn[T]) *BotFsm[T] {
 	if _, ok := configs[CommandHandlerState]; !ok {
 		panic("command handler state configuration must be provided")
+	}
+	if _, ok := configs[UndefinedState]; !ok {
+		panic("undefined state configuration must be provided")
 	}
 
 	opts := getDefaultOpts[T]()
@@ -100,7 +125,7 @@ func (b *BotFsm[T]) HandleUpdate(ctx context.Context, update *tgbotapi.Update) e
 		b.removeKeyboard(chatId)
 	}
 
-	err = b.saveStateFn(ctx, chatId, newName, data)
+	err = b.saveStateFn(ctx, chatId, newName, newData)
 	if err != nil {
 		return fmt.Errorf("error in attempt to save a new state: %w", err)
 	}
@@ -130,7 +155,7 @@ func (b *BotFsm[T]) GoTo(ctx context.Context, chatId int64, transition Transitio
 
 	err := b.saveStateFn(ctx, chatId, transition.Target, data)
 	if err != nil {
-		return fmt.Errorf("error in attempt to save a new state: %w", err)
+		return &SaveStateError{err}
 	}
 
 	for _, msgConfig := range b.getStateMessageConfigs(chatId, messageConfig) {
@@ -161,10 +186,13 @@ func (b *BotFsm[T]) resumeState(ctx context.Context, update *tgbotapi.Update) (s
 
 	name, data, err := b.loadStateFn(ctx, chatId)
 	if err != nil {
-		return "", emptyData, err
+		return "", emptyData, &LoadStateError{err}
 	}
-	return name, data, nil
+	if name == "" {
+		name = UndefinedState
+	}
 
+	return name, data, nil
 }
 
 func (b *BotFsm[T]) getZeroData() T {
