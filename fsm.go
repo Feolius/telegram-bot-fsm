@@ -8,7 +8,6 @@ import (
 	"strings"
 )
 
-const CommandHandlerState = "command-handler"
 const UndefinedState = "undefined"
 
 type NoChatIdError struct {
@@ -44,12 +43,26 @@ func (e *SaveStateError) Unwrap() error {
 }
 
 type botFsmOpts[T any] struct {
-	loadStateFn           LoadStateFn[T]
-	saveStateFn           SaveStateFn[T]
-	removeKeyboardTempMsg string
+	commands                  map[string]TransitionFn[T]
+	undefinedCommandMessageFn MessageFn[T]
+	loadStateFn               LoadStateFn[T]
+	saveStateFn               SaveStateFn[T]
+	removeKeyboardTempMsg     string
 }
 
 type BotFsmOptsFn[T any] func(options *botFsmOpts[T])
+
+func WithCommands[T any](commands map[string]TransitionFn[T]) BotFsmOptsFn[T] {
+	return func(opts *botFsmOpts[T]) {
+		opts.commands = commands
+	}
+}
+
+func WithUnknownCommandMessageFn[T any](messageFn MessageFn[T]) BotFsmOptsFn[T] {
+	return func(opts *botFsmOpts[T]) {
+		opts.undefinedCommandMessageFn = messageFn
+	}
+}
 
 func WithPersistenceHandlers[T any](loadStateFn LoadStateFn[T], saveStateFn SaveStateFn[T]) BotFsmOptsFn[T] {
 	return func(opts *botFsmOpts[T]) {
@@ -71,9 +84,6 @@ type BotFsm[T any] struct {
 }
 
 func NewBotFsm[T any](bot *tgbotapi.BotAPI, configs map[string]StateConfig[T], optFns ...BotFsmOptsFn[T]) *BotFsm[T] {
-	if _, ok := configs[CommandHandlerState]; !ok {
-		panic("command handler state configuration must be provided")
-	}
 	if _, ok := configs[UndefinedState]; !ok {
 		panic("undefined state configuration must be provided")
 	}
@@ -101,12 +111,30 @@ func (b *BotFsm[T]) HandleUpdate(ctx context.Context, update *tgbotapi.Update) e
 		return err
 	}
 
+	command := extractCommand(update)
+	if command != "" {
+		name = UndefinedState
+	}
+
 	stateConfig, ok := b.configs[name]
 	if !ok {
+		// @TODO Replace with error
 		panic(fmt.Sprintf("%s state configuration is not found", name))
 	}
 
-	transition, newData := stateConfig.TransitionFn(ctx, update, data)
+	var transition Transition
+	newData := data
+	if command != "" {
+		commandTransitionFn, ok := b.commands[command]
+		if ok {
+			transition, newData = commandTransitionFn(ctx, update, data)
+		} else {
+			transition = Transition{}
+		}
+	} else {
+		transition, newData = stateConfig.TransitionFn(ctx, update, data)
+	}
+
 	newName := transition.Target
 	if newName == "" {
 		newName = name
@@ -115,10 +143,16 @@ func (b *BotFsm[T]) HandleUpdate(ctx context.Context, update *tgbotapi.Update) e
 	messageConfig := transition.MessageConfig
 	newStateConfig, ok := b.configs[newName]
 	if !ok {
+		// @TODO Replace with error
 		panic(fmt.Sprintf("%s state configuration is not found", newName))
 	}
-	if messageConfig.Text == "" {
-		messageConfig = newStateConfig.MessageFn(ctx, newData)
+	if isEmptyMessageConfig(messageConfig) {
+		messageFn := newStateConfig.MessageFn
+		if command != "" && transition.Target == "" && b.undefinedCommandMessageFn != nil {
+			// Command doesn't exist
+			messageFn = b.undefinedCommandMessageFn
+		}
+		messageConfig = messageFn(ctx, newData)
 	}
 
 	if stateConfig.RemoveKeyboardAfter || messageConfig.RemoveKeyboard {
@@ -149,7 +183,7 @@ func (b *BotFsm[T]) GoTo(ctx context.Context, chatId int64, transition Transitio
 		panic(fmt.Sprintf("%s state configuration is not found", transition.Target))
 	}
 	messageConfig := transition.MessageConfig
-	if messageConfig.Text == "" {
+	if isEmptyMessageConfig(messageConfig) {
 		messageConfig = newStateConfig.MessageFn(ctx, data)
 	}
 
@@ -175,15 +209,6 @@ func (b *BotFsm[T]) resumeState(ctx context.Context, update *tgbotapi.Update) (s
 		return "", emptyData, &NoChatIdError{update}
 	}
 
-	var text string
-	if update.Message != nil {
-		text = update.Message.Text
-	}
-
-	if strings.HasPrefix(text, "/") && len(strings.Split(text, " ")) == 1 {
-		return CommandHandlerState, emptyData, nil
-	}
-
 	name, data, err := b.loadStateFn(ctx, chatId)
 	if err != nil {
 		return "", emptyData, &LoadStateError{err}
@@ -198,6 +223,10 @@ func (b *BotFsm[T]) resumeState(ctx context.Context, update *tgbotapi.Update) (s
 func (b *BotFsm[T]) getZeroData() T {
 	var data T
 	return data
+}
+
+func isEmptyMessageConfig(config MessageConfig) bool {
+	return config.Text == ""
 }
 
 func getChatId(update *tgbotapi.Update) int64 {
@@ -217,11 +246,13 @@ func (b *BotFsm[T]) removeKeyboard(chatId int64) {
 	msg.ReplyMarkup = tgbotapi.NewRemoveKeyboard(false)
 	msgSent, err := b.bot.Send(msg)
 	if err != nil {
+		// @TODO remove log
 		log.Printf("error in attempt to send hide-keyboard message: %s", err)
 	}
 	deleteMsg := tgbotapi.NewDeleteMessage(msgSent.Chat.ID, msgSent.MessageID)
 	_, err = b.bot.Send(deleteMsg)
 	if err != nil {
+		// @TODO remove log
 		log.Printf("error in attempt to delete hide-keyboard message: %s", err)
 	}
 }
@@ -241,4 +272,12 @@ func (b *BotFsm[T]) getStateMessageConfigs(chatId int64, messageConfig MessageCo
 		res = append(res, extraMsg)
 	}
 	return res
+}
+
+func extractCommand(update *tgbotapi.Update) string {
+	if update.Message != nil && strings.HasPrefix(update.Message.Text, "/") &&
+		len(strings.Split(update.Message.Text, " ")) == 1 {
+		return strings.TrimPrefix(update.Message.Text, "/")
+	}
+	return ""
 }

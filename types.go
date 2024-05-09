@@ -32,9 +32,12 @@ func TextTransition(text string) Transition {
 	}
 }
 
+type TransitionFn[T any] func(ctx context.Context, update *tgbotapi.Update, data T) (Transition, T)
+type MessageFn[T any] func(ctx context.Context, data T) MessageConfig
+
 type StateConfig[T any] struct {
-	TransitionFn        func(ctx context.Context, update *tgbotapi.Update, data T) (Transition, T)
-	MessageFn           func(ctx context.Context, data T) MessageConfig
+	TransitionFn        TransitionFn[T]
+	MessageFn           MessageFn[T]
 	RemoveKeyboardAfter bool
 	CleanupData         bool
 }
