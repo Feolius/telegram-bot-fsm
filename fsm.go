@@ -88,6 +88,15 @@ func NewBotFsm[T any](bot *tgbotapi.BotAPI, configs map[string]StateConfig[T], o
 		panic("undefined state configuration must be provided")
 	}
 
+	for name, config := range configs {
+		if config.TransitionFn == nil {
+			panic(fmt.Sprintf("transition function is not provided for %s state", name))
+		}
+		if config.MessageFn == nil {
+			panic(fmt.Sprintf("message function is not provided for %s state", name))
+		}
+	}
+
 	opts := getDefaultOpts[T]()
 	for _, optFn := range optFns {
 		optFn(&opts)
