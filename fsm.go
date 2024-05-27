@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"log"
 	"strings"
 )
 
@@ -18,6 +17,18 @@ func (e *NoChatIdError) Error() string {
 	return fmt.Sprintf("no chat id in update: %+v", e.Update)
 }
 
+type DeleteKeyboardError struct {
+	Err error
+}
+
+func (e *DeleteKeyboardError) Error() string {
+	return fmt.Sprintf("failed to delete keyboard: %s", e.Err)
+}
+
+func (e *DeleteKeyboardError) Unwrap() error {
+	return e.Err
+}
+
 type LoadStateError struct {
 	Err error
 }
@@ -28,6 +39,22 @@ func (e *LoadStateError) Error() string {
 
 func (e *LoadStateError) Unwrap() error {
 	return e.Err
+}
+
+type CurrentStateConfigNotFoundError struct {
+	Name string
+}
+
+func (e *CurrentStateConfigNotFoundError) Error() string {
+	return fmt.Sprintf("current state %s config not found", e.Name)
+}
+
+type NextStateConfigNotFoundError struct {
+	Name string
+}
+
+func (e *NextStateConfigNotFoundError) Error() string {
+	return fmt.Sprintf("next state %s config not found", e.Name)
 }
 
 type SaveStateError struct {
@@ -127,8 +154,7 @@ func (b *BotFsm[T]) HandleUpdate(ctx context.Context, update *tgbotapi.Update) e
 
 	stateConfig, ok := b.configs[name]
 	if !ok {
-		// @TODO Replace with error
-		panic(fmt.Sprintf("%s state configuration is not found", name))
+		return &CurrentStateConfigNotFoundError{name}
 	}
 
 	var transition Transition
@@ -152,8 +178,7 @@ func (b *BotFsm[T]) HandleUpdate(ctx context.Context, update *tgbotapi.Update) e
 	messageConfig := transition.MessageConfig
 	newStateConfig, ok := b.configs[newName]
 	if !ok {
-		// @TODO Replace with error
-		panic(fmt.Sprintf("%s state configuration is not found", newName))
+		return &NextStateConfigNotFoundError{newName}
 	}
 	if isEmptyMessageConfig(messageConfig) {
 		messageFn := newStateConfig.MessageFn
@@ -165,7 +190,10 @@ func (b *BotFsm[T]) HandleUpdate(ctx context.Context, update *tgbotapi.Update) e
 	}
 
 	if stateConfig.RemoveKeyboardAfter || messageConfig.RemoveKeyboard {
-		b.removeKeyboard(chatId)
+		err = b.removeKeyboard(chatId)
+		if err != nil {
+			return err
+		}
 	}
 
 	err = b.saveStateFn(ctx, chatId, newName, newData)
@@ -199,6 +227,13 @@ func (b *BotFsm[T]) GoTo(ctx context.Context, chatId int64, transition Transitio
 	err := b.saveStateFn(ctx, chatId, transition.Target, data)
 	if err != nil {
 		return &SaveStateError{err}
+	}
+
+	if messageConfig.RemoveKeyboard {
+		err = b.removeKeyboard(chatId)
+		if err != nil {
+			return err
+		}
 	}
 
 	for _, msgConfig := range b.getStateMessageConfigs(chatId, messageConfig) {
@@ -250,20 +285,17 @@ func getChatId(update *tgbotapi.Update) int64 {
 	return chatId
 }
 
-func (b *BotFsm[T]) removeKeyboard(chatId int64) {
+func (b *BotFsm[T]) removeKeyboard(chatId int64) error {
 	msg := tgbotapi.NewMessage(chatId, b.removeKeyboardTempMsg)
 	msg.ReplyMarkup = tgbotapi.NewRemoveKeyboard(false)
 	msgSent, err := b.bot.Send(msg)
 	if err != nil {
-		// @TODO remove log
-		log.Printf("error in attempt to send hide-keyboard message: %s", err)
+		return &DeleteKeyboardError{err}
 	}
 	deleteMsg := tgbotapi.NewDeleteMessage(msgSent.Chat.ID, msgSent.MessageID)
-	_, err = b.bot.Send(deleteMsg)
-	if err != nil {
-		// @TODO remove log
-		log.Printf("error in attempt to delete hide-keyboard message: %s", err)
-	}
+	// This method always returns an error because of invalid bool to Message conversion.
+	b.bot.Send(deleteMsg)
+	return nil
 }
 
 func (b *BotFsm[T]) getStateMessageConfigs(chatId int64, messageConfig MessageConfig) []tgbotapi.MessageConfig {
