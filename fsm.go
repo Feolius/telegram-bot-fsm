@@ -9,6 +9,7 @@ import (
 
 const UndefinedState = "undefined"
 
+// NoChatIdError Returned when FSM was not able to get chat id either from Message or CallbackQuery.
 type NoChatIdError struct {
 	*tgbotapi.Update
 }
@@ -17,6 +18,7 @@ func (e *NoChatIdError) Error() string {
 	return fmt.Sprintf("no chat id in update: %+v", e.Update)
 }
 
+// DeleteKeyboardError Returned when some error happened during "remove keyboard" temp message sending attempt.
 type DeleteKeyboardError struct {
 	Err error
 }
@@ -29,6 +31,7 @@ func (e *DeleteKeyboardError) Unwrap() error {
 	return e.Err
 }
 
+// LoadStateError Error wrapper for load state handler error.
 type LoadStateError struct {
 	Err error
 }
@@ -41,22 +44,7 @@ func (e *LoadStateError) Unwrap() error {
 	return e.Err
 }
 
-type CurrentStateConfigNotFoundError struct {
-	Name string
-}
-
-func (e *CurrentStateConfigNotFoundError) Error() string {
-	return fmt.Sprintf("current state %s config not found", e.Name)
-}
-
-type NextStateConfigNotFoundError struct {
-	Name string
-}
-
-func (e *NextStateConfigNotFoundError) Error() string {
-	return fmt.Sprintf("next state %s config not found", e.Name)
-}
-
+// SaveStateError Error wrapper for save state handler error.
 type SaveStateError struct {
 	Err error
 }
@@ -69,12 +57,37 @@ func (e *SaveStateError) Unwrap() error {
 	return e.Err
 }
 
+// CurrentStateConfigNotFoundError Returned when load state handler returned state name that doesn't exist in current state configuration.
+type CurrentStateConfigNotFoundError struct {
+	Name string
+}
+
+func (e *CurrentStateConfigNotFoundError) Error() string {
+	return fmt.Sprintf("current state %s config not found", e.Name)
+}
+
+// NextStateConfigNotFoundError Returned on attempt to perform transition to non-existing state.
+type NextStateConfigNotFoundError struct {
+	Name string
+}
+
+func (e *NextStateConfigNotFoundError) Error() string {
+	return fmt.Sprintf("next state %s config not found", e.Name)
+}
+
+// Additional FSM options.
 type botFsmOpts[T any] struct {
-	commands                  map[string]TransitionFn[T]
+	// Map key is a command without "/" prefix.
+	commands map[string]TransitionFn[T]
+	// Determine bot reaction on non-existing command.
 	undefinedCommandMessageFn MessageFn[T]
-	loadStateFn               LoadStateFn[T]
-	saveStateFn               SaveStateFn[T]
-	removeKeyboardTempMsg     string
+	// Load handler restores current state name and data by chat id from persistent storage.
+	loadStateFn LoadStateFn[T]
+	// Save handler puts current state name and data for given chat id into persistent storage.
+	saveStateFn SaveStateFn[T]
+	// This message will be sent along with RemoveKeyboard request. It will be removed right after that. But user
+	// might see this message for a second.
+	removeKeyboardTempMsg string
 }
 
 type BotFsmOptsFn[T any] func(options *botFsmOpts[T])
@@ -105,7 +118,8 @@ func WithRemoveKeyboardTempMsg[T any](removeKeyboardTempMsg string) BotFsmOptsFn
 }
 
 type BotFsm[T any] struct {
-	bot     *tgbotapi.BotAPI
+	bot *tgbotapi.BotAPI
+	// States configuration. Key is a state name. It is used as a transition target.
 	configs map[string]StateConfig[T]
 	botFsmOpts[T]
 }
@@ -136,6 +150,7 @@ func NewBotFsm[T any](bot *tgbotapi.BotAPI, configs map[string]StateConfig[T], o
 	}
 }
 
+// HandleUpdate processes tgbotapi Update and handle it according to given FSM config.
 func (b *BotFsm[T]) HandleUpdate(ctx context.Context, update *tgbotapi.Update) error {
 	chatId := getChatId(update)
 	if chatId == 0 {
@@ -210,6 +225,8 @@ func (b *BotFsm[T]) HandleUpdate(ctx context.Context, update *tgbotapi.Update) e
 	return nil
 }
 
+// GoTo forces chat transition to a specific state. This function is useful when you need to trigger some notifications,
+// or start a new scenario.
 func (b *BotFsm[T]) GoTo(ctx context.Context, chatId int64, transition Transition, data T) error {
 	if transition.Target == "" {
 		panic("transition target is required")
