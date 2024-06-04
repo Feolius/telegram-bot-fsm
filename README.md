@@ -149,7 +149,7 @@ configs[AddTaskNameState] = fsm.StateConfig[Data]{
     },
 	TransitionFn: func(ctx context.Context, update *tgbotapi.Update, data Data) (fsm.Transition, Data) {
 		if update.Message == nil {
-			// User did smth wrong. We keep it in the same state, and sends corresponding message.
+			// User did smth wrong. We keep it in the same state, and send corresponding message.
 			return fsm.TextTransition("Something is wrong. Please specify task name"), data
 		}
 		// Update the task name here.
