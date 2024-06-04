@@ -60,8 +60,8 @@ func defaultPersistenceHandlers[T any]() (LoadStateFn[T], SaveStateFn[T]) {
 func getDefaultOpts[T any]() botFsmOpts[T] {
 	loadStateFn, saveStateFn := defaultPersistenceHandlers[T]()
 	return botFsmOpts[T]{
-		loadStateFn:           loadStateFn,
-		saveStateFn:           saveStateFn,
-		removeKeyboardTempMsg: "Thinking...",
+		loadStateFn:            loadStateFn,
+		saveStateFn:            saveStateFn,
+		removeKeyboardTempText: "Thinking...",
 	}
 }

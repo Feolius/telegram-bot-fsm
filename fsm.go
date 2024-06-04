@@ -87,7 +87,7 @@ type botFsmOpts[T any] struct {
 	saveStateFn SaveStateFn[T]
 	// This message will be sent along with RemoveKeyboard request. It will be removed right after that. But user
 	// might see this message for a second.
-	removeKeyboardTempMsg string
+	removeKeyboardTempText string
 }
 
 type BotFsmOptsFn[T any] func(options *botFsmOpts[T])
@@ -111,9 +111,9 @@ func WithPersistenceHandlers[T any](loadStateFn LoadStateFn[T], saveStateFn Save
 	}
 }
 
-func WithRemoveKeyboardTempMsg[T any](removeKeyboardTempMsg string) BotFsmOptsFn[T] {
+func WithRemoveKeyboardTempText[T any](text string) BotFsmOptsFn[T] {
 	return func(opts *botFsmOpts[T]) {
-		opts.removeKeyboardTempMsg = removeKeyboardTempMsg
+		opts.removeKeyboardTempText = text
 	}
 }
 
@@ -303,7 +303,7 @@ func getChatId(update *tgbotapi.Update) int64 {
 }
 
 func (b *BotFsm[T]) removeKeyboard(chatId int64) error {
-	msg := tgbotapi.NewMessage(chatId, b.removeKeyboardTempMsg)
+	msg := tgbotapi.NewMessage(chatId, b.removeKeyboardTempText)
 	msg.ReplyMarkup = tgbotapi.NewRemoveKeyboard(false)
 	msgSent, err := b.bot.Send(msg)
 	if err != nil {
