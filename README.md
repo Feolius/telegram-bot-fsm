@@ -181,6 +181,18 @@ won't be called.
 Thus, the simplified pipeline looks like this
 ![alt text](docs/pipeline.png "pipeline")
 
+## External state switch
+
+Sometimes you need to change current user state and thus send a message by some external trigger. 
+The typical example is sending notifications. With FSM you can do it using `GoTo` method
+
+```go
+err := botFsm.GoTo(context, chatId, transition, data)
+```
+
+This method allows you not only send a single message, but even start 
+
+
 ## Commands
 
 Commands are a very popular way to interact with bots. You can define command handlers using the following 
@@ -201,6 +213,9 @@ commands["faq"] = func(ctx context.Context, update *tgbotapi.Update, data Data) 
 // Pass commands via fsm.WithCommands wrapper.
 botFsm := fsm.NewBotFsm(bot, configs, fsm.WithCommands[Data](commands))
 ```
+
+Note: When the incoming message is recognized as a command, the current user state is switched to `UndefinedState` 
+before handler call. So, the command resets the user state. That makes `TextTransition` usage safe.
 
 ## State persistence 
 
