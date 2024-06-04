@@ -142,8 +142,8 @@ type Data struct {
 
 configs[AddTaskNameState] = fsm.StateConfig[Data]{
 	MessageFn: func(ctx context.Context, data Data) fsm.MessageConfig {
-		// This message will be shown, when moving to AddTaskNameState.
         return fsm.MessageConfig{
+            // This message will be shown, when moving to AddTaskNameState.
             Text: "Enter task name",
         }
     },
@@ -153,8 +153,8 @@ configs[AddTaskNameState] = fsm.StateConfig[Data]{
 			return fsm.TextTransition("Something is wrong. Please specify task name"), data
 		}
 		// Update the task name here.
-		data.newTask.name = update.Message.Text
-        // And switch to the next state. AddTaskDescriptionState TransitionFn and MessageFn will get updated data.
+		data.newTask.name = update.Message.Text 
+		// And switch to the next state. AddTaskDescriptionState TransitionFn and MessageFn will get updated data.
 		return fsm.TargetTransition(AddTaskDescriptionState), data
 	},
 }
