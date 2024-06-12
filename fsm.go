@@ -57,34 +57,32 @@ func (e *SaveStateError) Unwrap() error {
 	return e.Err
 }
 
-// CurrentStateConfigNotFoundError Returned when load state handler returned state name that doesn't exist in current state configuration.
+// CurrentStateConfigNotFoundError Returned when load state handler returned state that doesn't exist in current state configuration.
 type CurrentStateConfigNotFoundError struct {
-	Name string
+	State
 }
 
 func (e *CurrentStateConfigNotFoundError) Error() string {
-	return fmt.Sprintf("current state %s config not found", e.Name)
+	return fmt.Sprintf("current state %s config not found", e.State)
 }
 
 // NextStateConfigNotFoundError Returned on attempt to perform transition to non-existing state.
 type NextStateConfigNotFoundError struct {
-	Name string
+	State
 }
 
 func (e *NextStateConfigNotFoundError) Error() string {
-	return fmt.Sprintf("next state %s config not found", e.Name)
+	return fmt.Sprintf("next state %s config not found", e.State)
 }
 
 // Additional FSM options.
 type botFsmOpts[T any] struct {
 	// Map key is a command without "/" prefix.
-	commands map[string]TransitionFn[T]
+	commands map[string]TransitionProvider[T]
 	// Determine bot reaction on non-existing command.
 	undefinedCommandMessageFn MessageFn[T]
-	// Load handler restores current state name and data by chat id from persistent storage.
-	loadStateFn LoadStateFn[T]
-	// Save handler puts current state name and data for given chat id into persistent storage.
-	saveStateFn SaveStateFn[T]
+	// PersistenceHandler is responsible for saving and restoring state data from persistence storage.
+	PersistenceHandler[T]
 	// This message will be sent along with RemoveKeyboard request. It will be removed right after that. But user
 	// might see this message for a second.
 	removeKeyboardTempText string
@@ -92,7 +90,7 @@ type botFsmOpts[T any] struct {
 
 type BotFsmOptsFn[T any] func(options *botFsmOpts[T])
 
-func WithCommands[T any](commands map[string]TransitionFn[T]) BotFsmOptsFn[T] {
+func WithCommands[T any](commands map[string]TransitionProvider[T]) BotFsmOptsFn[T] {
 	return func(opts *botFsmOpts[T]) {
 		opts.commands = commands
 	}
@@ -104,10 +102,9 @@ func WithUnknownCommandMessageFn[T any](messageFn MessageFn[T]) BotFsmOptsFn[T] 
 	}
 }
 
-func WithPersistenceHandlers[T any](loadStateFn LoadStateFn[T], saveStateFn SaveStateFn[T]) BotFsmOptsFn[T] {
+func WithPersistenceHandler[T any](handler PersistenceHandler[T]) BotFsmOptsFn[T] {
 	return func(opts *botFsmOpts[T]) {
-		opts.loadStateFn = loadStateFn
-		opts.saveStateFn = saveStateFn
+		opts.PersistenceHandler = handler
 	}
 }
 
@@ -118,24 +115,17 @@ func WithRemoveKeyboardTempText[T any](text string) BotFsmOptsFn[T] {
 }
 
 type BotFsm[T any] struct {
-	bot *tgbotapi.BotAPI
-	// States configuration. Key is a state name. It is used as a transition target.
-	configs map[string]StateConfig[T]
+	bot     *tgbotapi.BotAPI
+	configs map[State]StateHandler[T]
 	botFsmOpts[T]
 }
 
-func NewBotFsm[T any](bot *tgbotapi.BotAPI, configs map[string]StateConfig[T], optFns ...BotFsmOptsFn[T]) *BotFsm[T] {
+func NewBotFsm[T any](bot *tgbotapi.BotAPI, configs map[string]StateHandler[T], optFns ...BotFsmOptsFn[T]) *BotFsm[T] {
 	if _, ok := configs[UndefinedState]; !ok {
 		panic("undefined state configuration must be provided")
 	}
-
-	for name, config := range configs {
-		if config.TransitionFn == nil {
-			panic(fmt.Sprintf("transition function is not provided for %s state", name))
-		}
-		if config.MessageFn == nil {
-			panic(fmt.Sprintf("message function is not provided for %s state", name))
-		}
+	if _, ok := configs[""]; ok {
+		panic("empty state configuration forbidden")
 	}
 
 	opts := getDefaultOpts[T]()
@@ -157,61 +147,61 @@ func (b *BotFsm[T]) HandleUpdate(ctx context.Context, update *tgbotapi.Update) e
 		return &NoChatIdError{update}
 	}
 
-	name, data, err := b.resumeState(ctx, update)
+	state, data, err := b.resumeState(ctx, update)
 	if err != nil {
 		return err
 	}
 
 	command := extractCommand(update)
 	if command != "" {
-		name = UndefinedState
+		state = UndefinedState
 	}
 
-	stateConfig, ok := b.configs[name]
+	stateHandler, ok := b.configs[state]
 	if !ok {
-		return &CurrentStateConfigNotFoundError{name}
+		return &CurrentStateConfigNotFoundError{state}
 	}
 
 	var transition Transition
 	newData := data
 	if command != "" {
-		commandTransitionFn, ok := b.commands[command]
+		commandTransitionHandler, ok := b.commands[command]
 		if ok {
-			transition, newData = commandTransitionFn(ctx, update, data)
+			transition, newData = commandTransitionHandler.TransitionFn(ctx, update, data)
 		} else {
 			transition = Transition{}
 		}
 	} else {
-		transition, newData = stateConfig.TransitionFn(ctx, update, data)
+		transition, newData = stateHandler.TransitionFn(ctx, update, data)
 	}
 
-	newName := transition.Target
-	if newName == "" {
-		newName = name
+	newState := transition.State
+	if newState == "" {
+		newState = state
 	}
 
 	messageConfig := transition.MessageConfig
-	newStateConfig, ok := b.configs[newName]
+	newStateConfig, ok := b.configs[newState]
 	if !ok {
-		return &NextStateConfigNotFoundError{newName}
+		return &NextStateConfigNotFoundError{newState}
 	}
-	if isEmptyMessageConfig(messageConfig) {
+	if messageConfig.Empty() {
 		messageFn := newStateConfig.MessageFn
-		if command != "" && transition.Target == "" && b.undefinedCommandMessageFn != nil {
+		if command != "" && transition.State == "" && b.undefinedCommandMessageFn != nil {
 			// Command doesn't exist
 			messageFn = b.undefinedCommandMessageFn
 		}
 		messageConfig = messageFn(ctx, newData)
 	}
 
-	if stateConfig.RemoveKeyboardAfter || messageConfig.RemoveKeyboard {
+	if stateHandlerWithKeyboardRemoval, ok := stateHandler.(RemoveKeyboardManager); (ok && stateHandlerWithKeyboardRemoval.RemoveKeyboardAfter()) || messageConfig.RemoveKeyboard {
 		err = b.removeKeyboard(chatId)
 		if err != nil {
 			return err
 		}
 	}
 
-	err = b.saveStateFn(ctx, chatId, newName, newData)
+	err = b.SaveStateFn(ctx, chatId, newState, newData)
 	if err != nil {
 		return fmt.Errorf("error in attempt to save a new state: %w", err)
 	}
@@ -228,20 +218,16 @@ func (b *BotFsm[T]) HandleUpdate(ctx context.Context, update *tgbotapi.Update) e
 // GoTo forces chat transition to a specific state. This function is useful when you need to trigger some notifications,
 // or start a new scenario.
 func (b *BotFsm[T]) GoTo(ctx context.Context, chatId int64, transition Transition, data T) error {
-	if transition.Target == "" {
-		panic("transition target is required")
-	}
-
-	newStateConfig, ok := b.configs[transition.Target]
+	newStateConfig, ok := b.configs[transition.State]
 	if !ok {
-		panic(fmt.Sprintf("%s state configuration is not found", transition.Target))
+		return &NextStateConfigNotFoundError{transition.State}
 	}
 	messageConfig := transition.MessageConfig
-	if isEmptyMessageConfig(messageConfig) {
+	if messageConfig.Empty() {
 		messageConfig = newStateConfig.MessageFn(ctx, data)
 	}
 
-	err := b.saveStateFn(ctx, chatId, transition.Target, data)
+	err := b.SaveStateFn(ctx, chatId, transition.State, data)
 	if err != nil {
 		return &SaveStateError{err}
 	}
@@ -262,32 +248,23 @@ func (b *BotFsm[T]) GoTo(ctx context.Context, chatId int64, transition Transitio
 	return nil
 }
 
-func (b *BotFsm[T]) resumeState(ctx context.Context, update *tgbotapi.Update) (string, T, error) {
+func (b *BotFsm[T]) resumeState(ctx context.Context, update *tgbotapi.Update) (State, T, error) {
 	chatId := getChatId(update)
 
-	emptyData := b.getZeroData()
+	var emptyData T
 	if chatId == 0 {
 		return "", emptyData, &NoChatIdError{update}
 	}
 
-	name, data, err := b.loadStateFn(ctx, chatId)
+	state, data, err := b.LoadStateFn(ctx, chatId)
 	if err != nil {
 		return "", emptyData, &LoadStateError{err}
 	}
-	if name == "" {
-		name = UndefinedState
+	if state == "" {
+		state = UndefinedState
 	}
 
-	return name, data, nil
-}
-
-func (b *BotFsm[T]) getZeroData() T {
-	var data T
-	return data
-}
-
-func isEmptyMessageConfig(config MessageConfig) bool {
-	return config.Text == ""
+	return state, data, nil
 }
 
 func getChatId(update *tgbotapi.Update) int64 {

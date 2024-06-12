@@ -42,7 +42,7 @@ func main() {
 	commands := make(map[string]fsm.TransitionFn[Data])
 	commands["start"] = func(ctx context.Context, update *tgbotapi.Update, data Data) (fsm.Transition, Data) {
 		// "/start" command initiates survey with empty data. It resets existing data.
-		return fsm.TargetTransition(NameState), Data{}
+		return fsm.StateTransition(NameState), Data{}
 	}
 	commands["whoami"] = func(ctx context.Context, update *tgbotapi.Update, data Data) (fsm.Transition, Data) {
 		// "/whoami" command returns information about yourself, if it exists and non-empty.
@@ -91,7 +91,7 @@ func getFsmConfigs() map[string]fsm.StateConfig[Data] {
 			}
 			// A new task name is populated with the user response.
 			data.PersonName = update.Message.Text
-			return fsm.TargetTransition(AgeState), data
+			return fsm.StateTransition(AgeState), data
 		},
 	}
 	configs[AgeState] = fsm.StateConfig[Data]{
