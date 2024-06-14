@@ -18,6 +18,12 @@ type MessageConfig struct {
 	RemoveKeyboard bool
 }
 
+func TextMessageConfig(text string) MessageConfig {
+	messageConfig := MessageConfig{}
+	messageConfig.Text = text
+	return messageConfig
+}
+
 func (m MessageConfig) Empty() bool {
 	return m.Text == ""
 }

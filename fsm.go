@@ -80,7 +80,7 @@ type botFsmOpts[T any] struct {
 	// Map key is a command without "/" prefix.
 	commands map[string]TransitionProvider[T]
 	// Determine bot reaction on non-existing command.
-	undefinedCommandMessageFn MessageFn[T]
+	unknownCommandMessageConfigProvider MessageConfigProvider[T]
 	// PersistenceHandler is responsible for saving and restoring state data from persistence storage.
 	PersistenceHandler[T]
 	// This message will be sent along with RemoveKeyboard request. It will be removed right after that. But user
@@ -96,9 +96,9 @@ func WithCommands[T any](commands map[string]TransitionProvider[T]) BotFsmOptsFn
 	}
 }
 
-func WithUnknownCommandMessageFn[T any](messageFn MessageFn[T]) BotFsmOptsFn[T] {
+func WithUnknownCommandMessageConfigProvider[T any](messageConfig MessageConfigProvider[T]) BotFsmOptsFn[T] {
 	return func(opts *botFsmOpts[T]) {
-		opts.undefinedCommandMessageFn = messageFn
+		opts.unknownCommandMessageConfigProvider = messageConfig
 	}
 }
 
@@ -187,9 +187,9 @@ func (b *BotFsm[T]) HandleUpdate(ctx context.Context, update *tgbotapi.Update) e
 	}
 	if messageConfig.Empty() {
 		messageFn := newStateConfig.MessageFn
-		if command != "" && transition.State == "" && b.undefinedCommandMessageFn != nil {
+		if command != "" && transition.State == "" && b.unknownCommandMessageConfigProvider != nil {
 			// Command doesn't exist
-			messageFn = b.undefinedCommandMessageFn
+			messageFn = b.unknownCommandMessageConfigProvider.MessageFn
 		}
 		messageConfig = messageFn(ctx, newData)
 	}

@@ -108,9 +108,7 @@ func (h MenuStateHandler) RemoveKeyboardAfter() bool {
 type AddTaskNameStateHandler struct{}
 
 func (h AddTaskNameStateHandler) MessageFn(ctx context.Context, data Data) fsm.MessageConfig {
-	messageConfig := fsm.MessageConfig{}
-	messageConfig.Text = "Enter task name"
-	return messageConfig
+	return fsm.TextMessageConfig("Enter task name")
 }
 
 func (h AddTaskNameStateHandler) TransitionFn(ctx context.Context, update *tgbotapi.Update, data Data) (fsm.Transition, Data) {
@@ -125,9 +123,7 @@ func (h AddTaskNameStateHandler) TransitionFn(ctx context.Context, update *tgbot
 type AddTaskDescriptionStateHandler struct{}
 
 func (h AddTaskDescriptionStateHandler) MessageFn(ctx context.Context, data Data) fsm.MessageConfig {
-	messageConfig := fsm.MessageConfig{}
-	messageConfig.Text = "Enter task description"
-	return messageConfig
+	return fsm.TextMessageConfig("Enter task description")
 }
 
 func (h AddTaskDescriptionStateHandler) TransitionFn(ctx context.Context, update *tgbotapi.Update, data Data) (fsm.Transition, Data) {
@@ -215,13 +211,18 @@ type UndefinedStateHandler struct{}
 
 func (h UndefinedStateHandler) MessageFn(ctx context.Context, data Data) fsm.MessageConfig {
 	// It can be used for some general information.
-	messageConfig := fsm.MessageConfig{}
-	messageConfig.Text = "Use /start command to get into main menu"
-	return messageConfig
+	return fsm.TextMessageConfig("Use /start command to get into main menu")
 }
 
 func (h UndefinedStateHandler) TransitionFn(ctx context.Context, update *tgbotapi.Update, data Data) (fsm.Transition, Data) {
 	return fsm.Transition{}, data
+}
+
+type UnknownCommandMessageProvider struct{}
+
+func (u UnknownCommandMessageProvider) MessageFn(ctx context.Context, data Data) fsm.MessageConfig {
+	// This message will be shown, if user enters command which is not handled by this bot.
+	return fsm.TextMessageConfig("Unknown command")
 }
 
 func main() {
@@ -250,7 +251,12 @@ func main() {
 	commands := make(map[string]fsm.TransitionProvider[Data])
 	commands["start"] = StartCommandHandler{}
 
-	botFsm := fsm.NewBotFsm(bot, configs, fsm.WithCommands[Data](commands))
+	botFsm := fsm.NewBotFsm(
+		bot,
+		configs,
+		fsm.WithCommands[Data](commands),
+		fsm.WithUnknownCommandMessageConfigProvider[Data](UnknownCommandMessageProvider{}),
+	)
 
 	ctx := context.TODO()
 	for update := range updates {
