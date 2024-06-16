@@ -181,12 +181,12 @@ func (b *BotFsm[T]) HandleUpdate(ctx context.Context, update *tgbotapi.Update) e
 	}
 
 	messageConfig := transition.MessageConfig
-	newStateConfig, ok := b.configs[newState]
+	newStateHandler, ok := b.configs[newState]
 	if !ok {
 		return &NextStateConfigNotFoundError{newState}
 	}
 	if messageConfig.Empty() {
-		messageFn := newStateConfig.MessageFn
+		messageFn := newStateHandler.MessageFn
 		if command != "" && transition.State == "" && b.unknownCommandMessageConfigProvider != nil {
 			// Command doesn't exist
 			messageFn = b.unknownCommandMessageConfigProvider.MessageFn
@@ -194,7 +194,9 @@ func (b *BotFsm[T]) HandleUpdate(ctx context.Context, update *tgbotapi.Update) e
 		messageConfig = messageFn(ctx, newData)
 	}
 
-	if stateHandlerWithKeyboardRemoval, ok := stateHandler.(RemoveKeyboardManager); (ok && stateHandlerWithKeyboardRemoval.RemoveKeyboardAfter()) || messageConfig.RemoveKeyboard {
+	removeKeyboardBeforeMarker, okBefore := newStateHandler.(RemoveKeyboardBeforeMarker)
+	removeKeyboardAfterMarker, okAfter := stateHandler.(RemoveKeyboardAfterMarker)
+	if (okBefore && removeKeyboardBeforeMarker.RemoveKeyboardBefore()) || (okAfter && removeKeyboardAfterMarker.RemoveKeyboardAfter()) || messageConfig.RemoveKeyboard {
 		err = b.removeKeyboard(chatId)
 		if err != nil {
 			return err
@@ -293,18 +295,18 @@ func (b *BotFsm[T]) removeKeyboard(chatId int64) error {
 }
 
 func (b *BotFsm[T]) getStateMessageConfigs(chatId int64, messageConfig MessageConfig) []tgbotapi.MessageConfig {
-	msg := tgbotapi.NewMessage(chatId, messageConfig.Text)
+	msg := messageConfig.MessageConfig
+	msg.ChatID = chatId
 	msg.ParseMode = messageConfig.ParseMode
 	if messageConfig.ReplyMarkup != nil {
 		msg.ReplyMarkup = messageConfig.ReplyMarkup
 	}
-	res := make([]tgbotapi.MessageConfig, 0, 1)
-	res = append(res, msg)
-	for _, extraText := range messageConfig.ExtraTexts {
-		extraMsg := tgbotapi.NewMessage(chatId, extraText)
-		extraMsg.ParseMode = msg.ParseMode
-		extraMsg.ReplyMarkup = msg.ReplyMarkup
-		res = append(res, extraMsg)
+	res := make([]tgbotapi.MessageConfig, 1+len(messageConfig.ExtraTexts))
+	res[0] = msg
+	for i, extraText := range messageConfig.ExtraTexts {
+		extraMsg := msg
+		extraMsg.Text = extraText
+		res[i+1] = extraMsg
 	}
 	return res
 }

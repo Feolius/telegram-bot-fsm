@@ -55,17 +55,6 @@ func TextTransition(text string) Transition {
 // MessageFn serves for MessageConfig definition.
 type MessageFn[T any] func(ctx context.Context, data T) MessageConfig
 
-// StateConfig is a single state configuration.
-//type StateConfig[T any] struct {
-//	// If bot sits in the current state, this function will be called to determine Transition to the next state.
-//	TransitionFn TransitionFn[T]
-//	// If TransitionFn returns Transition with empty message Text (i.e. MessageConfig is empty), Target MessageFn will
-//	// be called to get MessageConfig.
-//	MessageFn MessageFn[T]
-//	// If set to true, RemoveMessage will be sent and removed before next state transition.
-//	RemoveKeyboardAfter bool
-//}
-
 type TransitionProvider[T any] interface {
 	// TransitionFn defines state switching logic.
 	TransitionFn(ctx context.Context, update *tgbotapi.Update, data T) (Transition, T)
@@ -81,9 +70,14 @@ type StateHandler[T any] interface {
 	TransitionProvider[T]
 }
 
-type RemoveKeyboardManager interface {
-	// RemoveKeyboardAfter manage keyboard removal when bot leaving state.
+type RemoveKeyboardAfterMarker interface {
+	// RemoveKeyboardAfter gives a signal to remove keyboard after bot left the state.
 	RemoveKeyboardAfter() bool
+}
+
+type RemoveKeyboardBeforeMarker interface {
+	// RemoveKeyboardBefore gives a signal to remove keyboard before bot enters the state.
+	RemoveKeyboardBefore() bool
 }
 
 type PersistenceHandler[T any] interface {

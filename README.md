@@ -27,7 +27,31 @@ import (
 	"os"
 )
 
+// Data is empty, because we don't need to pass any data between states for this bot.
 type Data struct{}
+
+type StartCommandHandler struct{}
+
+func (h StartCommandHandler) TransitionFn(ctx context.Context, update *tgbotapi.Update, data Data) (fsm.Transition, Data) {
+	// "/start" command simply transits bot into UndefinedState.
+	return fsm.StateTransition(fsm.UndefinedState), data
+}
+
+type UndefinedStateHandler struct{}
+
+// MessageFn returns default state message configuration.
+func (h UndefinedStateHandler) MessageFn(ctx context.Context, data Data) fsm.MessageConfig {
+	// This message will be shown when /start command is used, because /start command transits bot into UndefinedState.
+	return fsm.TextMessageConfig("Type any message and it will be sent back to you")
+}
+
+// TransitionFn describes how to switch to another states. In this case, we don't need to change state, because we have the only state.
+func (h UndefinedStateHandler) TransitionFn(ctx context.Context, update *tgbotapi.Update, data Data) (fsm.Transition, Data) {
+	if update.Message == nil || update.Message.Text == "" {
+		return fsm.TextTransition("This message should never be sent"), data
+	}
+	return fsm.TextTransition(update.Message.Text), data
+}
 
 func main() {
 	bot, err := tgbotapi.NewBotAPI(os.Getenv("TELEGRAM_APITOKEN"))
@@ -45,32 +69,14 @@ func main() {
 	}()
 
 	// Declare bot commands configuration. It is optional.
-	commands := make(map[string]fsm.TransitionFn[Data])
-	commands["start"] = func(ctx context.Context, update *tgbotapi.Update, data Data) (fsm.Transition, Data) {
-		// "/start" command simply transits bot into UndefinedState.
-		return fsm.TargetTransition(fsm.UndefinedState), data
-	}
+	commands := make(map[string]fsm.TransitionProvider[Data])
+	commands["start"] = StartCommandHandler{}
 
 	// Declares FSM state configuration. Map key is a state name.
-	configs := make(map[string]fsm.StateConfig[Data])
-	// UndefinedState is a specific state, and it is required to be provided. 
+	configs := make(map[string]fsm.StateHandler[Data])
+	// UndefinedState is a specific state, and it is required to be provided.
 	// And this is the only state we need for this bot.
-	configs[fsm.UndefinedState] = fsm.StateConfig[Data]{
-		// Default state message configuration is returned in this handler.
-		MessageFn: func(ctx context.Context, data Data) fsm.MessageConfig {
-			return fsm.MessageConfig{
-				// This message will be shown when /start command is used.
-				Text: "Type any message and it will be sent back to you",
-			}
-		},
-		// This is where we declare the main logic.
-		TransitionFn: func(ctx context.Context, update *tgbotapi.Update, data Data) (fsm.Transition, Data) {
-			if update.Message == nil || update.Message.Text == "" {
-				return fsm.TextTransition("This message should never be sent"), data
-			}
-			return fsm.TextTransition(update.Message.Text), data
-		},
-	}
+	configs[fsm.UndefinedState] = UndefinedStateHandler{}
 
 	botFsm := fsm.NewBotFsm(bot, configs, fsm.WithCommands[Data](commands))
 
@@ -80,6 +86,7 @@ func main() {
 		// Some error handling here...
 	}
 }
+
 ```
 
 It is a primitive bot that can do 2 things: respond with a description message on `/start` command and send any 
