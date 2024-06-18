@@ -1,5 +1,7 @@
 # Golang Telegram Bot Finite State Machine
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/Feolius/telegram-bot-fsm.svg)](https://pkg.go.dev/github.com/Feolius/telegram-bot-fsm)
+
 It's a wrapper around [Telegram Bot API Bindings](https://github.com/go-telegram-bot-api/telegram-bot-api). 
 This library provides useful scaffolds to build bots whose functionality is based on direct message (DM) 
 communication. It is not suitable for telegram group bots. 
