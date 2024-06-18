@@ -72,7 +72,7 @@ func main() {
 	commands := make(map[string]fsm.TransitionProvider[Data])
 	commands["start"] = StartCommandHandler{}
 
-	// Declares FSM state configuration. Map key is a state name.
+	// Declare FSM state configuration. Map key is a state name.
 	configs := make(map[string]fsm.StateHandler[Data])
 	// UndefinedState is a specific state, and it is required to be provided.
 	// And this is the only state we need for this bot.
@@ -188,7 +188,7 @@ are optional. If `State` is empty, the bot stays in the current state. If `Messa
 target `MessageFn` will be called to get message information. If `MessageConfig` is not empty, target `MessageFn` 
 won't be called. Thus, transition `MessageConfig` _overrides_ `MessageProvider` behaviour.
 
-`fsm.StateTransition(target string)` and `fsm.TextTransition(text string)` are 2 helper factories that create 
+`fsm.StateTransition(state string)` and `fsm.TextTransition(text string)` are 2 helper factories that create 
 `Transition` with `State` and `MessageConfig.Text` correspondingly. 
 
 Thus, the simplified pipeline looks like this
@@ -202,8 +202,6 @@ The typical example is sending notifications. With FSM you can do it using `GoTo
 ```go
 err := botFsm.GoTo(context, chatId, transition, data)
 ```
-
-It is very useful for notifications or even starting complex scenarios on demand.
 
 ## Commands
 
@@ -251,7 +249,7 @@ type PersistenceHandler[T any] interface {
 ```
 
 LoadStateFn is declared to restore the state name and data from persistent storage. SaveStateFn is used to save 
-the state name and data into persistent storage. Together, these handlers provide the ability to manage "session" 
+the state name and data into persistent storage. Together, these methods provide the ability to manage "session" 
 data between requests. If load handler returns an empty `state` 
 (e.g. when a user sends a message for the first time), it is treated as UndefinedState.
 

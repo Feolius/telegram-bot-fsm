@@ -32,7 +32,7 @@ func (m MessageConfig) Empty() bool {
 type Transition struct {
 	// Next state name. If it is empty, bot stays in the same state (e.g. when need to send validation error).
 	State
-	// Defines transition bot message. If MessageConfig Text field is empty, corresponding Target state MessageFn
+	// Defines transition bot message. If MessageConfig Text field is empty, the next state MessageFn
 	// will be called to get MessageConfig.
 	MessageConfig
 }
