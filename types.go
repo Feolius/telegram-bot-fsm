@@ -49,9 +49,6 @@ func TextTransition(text string) Transition {
 	return transition
 }
 
-// TransitionFn defines state switching logic.
-//type TransitionFn[T any] func(ctx context.Context, update *tgbotapi.Update, data T) (Transition, T)
-
 // MessageFn serves for MessageConfig definition.
 type MessageFn[T any] func(ctx context.Context, data T) MessageConfig
 

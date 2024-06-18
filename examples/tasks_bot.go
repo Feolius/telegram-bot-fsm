@@ -51,6 +51,7 @@ func (s StartCommandHandler) TransitionFn(ctx context.Context, update *tgbotapi.
 type MenuStateHandler struct{}
 
 func (h MenuStateHandler) MessageFn(ctx context.Context, data Data) fsm.MessageConfig {
+	// Show menu keyboard along with the message text.
 	messageConfig := fsm.MessageConfig{}
 	messageConfig.Text = "Choose what you want to do"
 	messageConfig.ReplyMarkup = getMenuButtons()
