@@ -77,7 +77,7 @@ func main() {
 	commands["start"] = StartCommandHandler{}
 
 	// State configuration. Map key is a state's name.
-	configs := make(map[string]fsm.StateHandler[Data])
+	configs := make(map[fsm.State]fsm.StateHandler[Data])
 	// UndefinedState is the only state we need for this bot and it is required to be provided.
 	configs[fsm.UndefinedState] = UndefinedStateHandler{}
 
@@ -100,8 +100,8 @@ You can find more examples in the [examples](examples) folder.
 
 ## FSM configuration
 
-FSM configuration is generic and has a type of `map[string]fsm.StateHandler[T]`.
-The `string` key of this map is the name of the state. `T` is a type of
+FSM configuration is generic and has a type of `map[fsm.State]fsm.StateHandler[T]`.
+The `fsm.State` key of this map is the name of the state. `T` is a type of
 payload data that will be operated during state transitions.
 
 `fsm.StateHandler` is defined as follows.
@@ -176,7 +176,7 @@ func (h AddTaskNameStateHandler) TransitionFn(ctx context.Context, update *tgbot
     return fsm.StateTransition(AddTaskDescriptionState), data
 }
 // ...
-configs := make(map[string]fsm.StateHandler[Data])
+configs := make(map[fsm.State]fsm.StateHandler[Data])
 configs[AddTaskNameState] = AddTaskNameStateHandler{}
 ```
 
@@ -184,12 +184,12 @@ configs[AddTaskNameState] = AddTaskNameStateHandler{}
 
 ```go
 type Transition struct {
-    State string
+    State
     MessageConfig
 }
 ```
 
-`State` is the name of the state (`string` key in the config map) you
+`State` is the name of the state (that key in the config map) you
 want to transit to. Besides target state, you can also define the bot's
 transition message with `MessageConfig`. Both `State` and `MessageConfig`
 are optional. If `State` is empty, the bot keeps the current state. If
@@ -198,7 +198,7 @@ information. If `MessageConfig` is not empty, target `MessageFn` won't be
 called. Thus, transition `MessageConfig` _overrides_ `MessageProvider`
 behaviour.
 
-`fsm.StateTransition(state string)` and `fsm.TextTransition(text string)`
+`fsm.StateTransition(state fsm.State)` and `fsm.TextTransition(text string)`
 are 2 helper factories that create `Transition` with `State`
 and `MessageConfig.Text` respectively.
 
@@ -237,7 +237,7 @@ func (h FaqCommandHandler) TransitionFn(ctx context.Context, update *tgbotapi.Up
     return fsm.TextTransition("Some faq text here"), data
 }
 // ...
-commands := make(map[string]fsm.TransitionProvider[Data])
+commands := make(map[fsm.State]fsm.TransitionProvider[Data])
 commands["start"] = StartCommandHandler{}
 commands["faq"] = FaqCommandHandler{}
 // Pass commands via fsm.WithCommands wrapper.
@@ -260,8 +260,8 @@ to do that you should implement `PersistenceHandler`.
 
 ```go
 type PersistenceHandler[T any] interface {
-    LoadStateFn(ctx context.Context, chatId int64) (state string, data T, err error)
-    SaveStateFn(ctx context.Context, chatId int64, state string, data T) error
+    LoadStateFn(ctx context.Context, chatId int64) (state fsm.State, data T, err error)
+    SaveStateFn(ctx context.Context, chatId int64, state fsm.State, data T) error
 }
 ```
 

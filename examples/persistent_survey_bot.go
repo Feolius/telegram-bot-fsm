@@ -174,7 +174,7 @@ func main() {
 		}
 	}()
 
-	configs := make(map[string]fsm.StateHandler[Data])
+	configs := make(map[fsm.State]fsm.StateHandler[Data])
 	configs[NameState] = NameStateHandler{}
 	configs[AgeState] = AgeStateHandler{}
 	configs[fsm.UndefinedState] = UndefinedStateHandler{}

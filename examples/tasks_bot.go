@@ -241,7 +241,7 @@ func main() {
 		}
 	}()
 
-	configs := make(map[string]fsm.StateHandler[Data])
+	configs := make(map[fsm.State]fsm.StateHandler[Data])
 	configs[MenuState] = MenuStateHandler{}
 	configs[AddTaskNameState] = AddTaskNameStateHandler{}
 	configs[AddTaskDescriptionState] = AddTaskDescriptionStateHandler{}
