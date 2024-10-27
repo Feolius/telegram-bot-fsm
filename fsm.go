@@ -3,8 +3,9 @@ package fsm
 import (
 	"context"
 	"fmt"
-	"github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"strings"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 const UndefinedState = "undefined"
@@ -57,7 +58,8 @@ func (e *SaveStateError) Unwrap() error {
 	return e.Err
 }
 
-// CurrentStateConfigNotFoundError Returned when load state handler returned state that doesn't exist in current state configuration.
+// CurrentStateConfigNotFoundError Returned when load state handler returned state that doesn't exist in current
+// state configuration.
 type CurrentStateConfigNotFoundError struct {
 	State
 }
@@ -165,7 +167,7 @@ func (b *BotFsm[T]) HandleUpdate(ctx context.Context, update *tgbotapi.Update) e
 	var transition Transition
 	newData := data
 	if command != "" {
-		commandTransitionHandler, ok := b.commands[command]
+		commandTransitionHandler, ok := b.commands[command] //nolint:govet // it's ok
 		if ok {
 			transition, newData = commandTransitionHandler.TransitionFn(ctx, update, data)
 		} else {
@@ -196,7 +198,8 @@ func (b *BotFsm[T]) HandleUpdate(ctx context.Context, update *tgbotapi.Update) e
 
 	removeKeyboardBeforeMarker, okBefore := newStateHandler.(RemoveKeyboardBeforeMarker)
 	removeKeyboardAfterMarker, okAfter := stateHandler.(RemoveKeyboardAfterMarker)
-	if (okBefore && removeKeyboardBeforeMarker.RemoveKeyboardBefore()) || (okAfter && removeKeyboardAfterMarker.RemoveKeyboardAfter()) || messageConfig.RemoveKeyboard {
+	if (okBefore && removeKeyboardBeforeMarker.RemoveKeyboardBefore()) ||
+		(okAfter && removeKeyboardAfterMarker.RemoveKeyboardAfter()) || messageConfig.RemoveKeyboard {
 		err = b.removeKeyboard(chatId)
 		if err != nil {
 			return err
@@ -275,7 +278,8 @@ func getChatId(update *tgbotapi.Update) int64 {
 		chatId = update.Message.Chat.ID
 	}
 
-	if chatId == 0 && update.CallbackQuery != nil && update.CallbackQuery.Message != nil && update.CallbackQuery.Message.Chat != nil {
+	if chatId == 0 && update.CallbackQuery != nil && update.CallbackQuery.Message != nil &&
+		update.CallbackQuery.Message.Chat != nil {
 		chatId = update.CallbackQuery.Message.Chat.ID
 	}
 	return chatId
@@ -290,7 +294,7 @@ func (b *BotFsm[T]) removeKeyboard(chatId int64) error {
 	}
 	deleteMsg := tgbotapi.NewDeleteMessage(msgSent.Chat.ID, msgSent.MessageID)
 	// This method always returns an error because of invalid bool to Message conversion.
-	b.bot.Send(deleteMsg)
+	b.bot.Send(deleteMsg) //nolint:errcheck // see comment above
 	return nil
 }
 
