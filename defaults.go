@@ -29,7 +29,7 @@ func (s *chatStatesStore[T]) get(key int64) (*ChatState[T], bool) {
 	return val, ok
 }
 
-func (s *chatStatesStore[T]) delete(key int64) {
+func (s *chatStatesStore[T]) delete(key int64) { //nolint:unused // will be used later
 	s.mx.Lock()
 	defer s.mx.Unlock()
 	delete(s.m, key)
@@ -44,7 +44,7 @@ func (h *pseudoPersistenceHandler[T]) LoadStateFn(ctx context.Context, chatId in
 		state = chatState.state
 		data = chatState.data
 	}
-	return
+	return state, data, nil
 }
 
 func (h *pseudoPersistenceHandler[T]) SaveStateFn(ctx context.Context, chatId int64, state State, data T) error {
